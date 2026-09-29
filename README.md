@@ -3,7 +3,7 @@
 [![tests](https://github.com/victor-merino-hub/audiolab/actions/workflows/tests.yml/badge.svg)](https://github.com/victor-merino-hub/audiolab/actions/workflows/tests.yml)
 
 Audio signal processing and machine learning for **hearables**: from DSP fundamentals to
-acoustic scene classification and noise reduction under real-time constraints.
+sound classification and noise reduction under real-time constraints.
 
 > Work in progress. I am a Telecommunications Engineering student building this project
 > step by step to learn audio DSP and ML in depth. See the [roadmap](#roadmap).
@@ -34,7 +34,7 @@ matches the requested one, and time-stretching keeps the pitch.
 
 - [x] **DSP fundamentals**: signal generation, spectrum, spectrogram, time-stretch
 - [x] **Project setup**: installable package, tests, CI
-- [ ] **Acoustic scene classification on real data** (ESC-50): MFCC + RandomForest baseline,
+- [ ] **Environmental sound classification on real data** (ESC-50): MFCC + RandomForest baseline,
       CNN on log-mel spectrograms, 5-fold cross-validation
 - [ ] **Real-time demo**: classify live microphone input frame by frame
 - [ ] **Noise reduction**: spectral subtraction and Wiener filtering, then a small mask-estimation
@@ -70,3 +70,7 @@ from audiolab.analysis import compute_spectrum
 t, y = generate_signal("square", frequency=440, amplitude=0.5, fs=44100, duration=1.0)
 f, P = compute_spectrum(y, fs=44100)
 ```
+
+## License
+
+[MIT](LICENSE)
