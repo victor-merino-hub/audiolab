@@ -1,0 +1,13 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data: audio files are downloaded or generated, never committed
+data/
+*.wav
+*.mp3

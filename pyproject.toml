@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "audiolab"
+version = "0.1.0"
+description = "Audio signal processing and machine learning for hearables"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Victor Merino" }]
+dependencies = [
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "librosa",
+    "soundfile",
+    "sounddevice",
+    "scikit-learn",
+    "torch",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ipykernel",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
