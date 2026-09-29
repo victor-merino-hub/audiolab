@@ -28,3 +28,7 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+filterwarnings = [
+    # Raised inside librosa.effects.time_stretch itself, not by our code
+    "ignore:The `.*` parameter is deprecated:FutureWarning",
+]

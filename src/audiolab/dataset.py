@@ -1,35 +1,35 @@
-"""Generación de datasets sintéticos etiquetados para ML."""
+"""Labeled synthetic datasets for ML."""
 import numpy as np
-from audiolab.generador import generar_senal
+from audiolab.generator import generate_signal
 
-TIPOS = ["seno", "cuadrada", "triangular", "sierra"]
+WAVEFORMS = ["sine", "square", "triangle", "sawtooth"]
 
 
-def generar_dataset(n_por_clase=200, fs=16000, duracion=1.0, seed=0, snr_db=None):
-    """Genera señales aleatorias etiquetadas por tipo.
+def generate_dataset(n_per_class=200, fs=16000, duration=1.0, seed=0, snr_db=None):
+    """Generate random signals labeled by waveform.
 
-    Si snr_db es None, el ruido tiene una intensidad aleatoria (0 a 0.1).
-    Si se indica snr_db, el ruido se ajusta a esa relación señal-ruido en dB.
+    If snr_db is None, the noise has a random intensity (0 to 0.1).
+    If snr_db is given, the noise is scaled to that signal-to-noise ratio in dB.
 
-    Devuelve:
-        X: array (n_señales, n_muestras)
-        y: array de etiquetas (texto), una por señal
+    Returns:
+        X: array (n_signals, n_samples)
+        y: array of labels (strings), one per signal
     """
     rng = np.random.default_rng(seed)
     X, y = [], []
-    for tipo in TIPOS:
-        for _ in range(n_por_clase):
-            frecuencia = rng.uniform(100, 2000)
-            amplitud = rng.uniform(0.2, 1.0)
-            _, senal = generar_senal(tipo, frecuencia, amplitud, fs, duracion)
+    for waveform in WAVEFORMS:
+        for _ in range(n_per_class):
+            frequency = rng.uniform(100, 2000)
+            amplitude = rng.uniform(0.2, 1.0)
+            _, sig = generate_signal(waveform, frequency, amplitude, fs, duration)
 
             if snr_db is None:
                 sigma = rng.uniform(0, 0.1)
             else:
-                potencia_senal = np.mean(senal ** 2)
-                sigma = np.sqrt(potencia_senal / 10 ** (snr_db / 10))
+                signal_power = np.mean(sig ** 2)
+                sigma = np.sqrt(signal_power / 10 ** (snr_db / 10))
 
-            senal = senal + rng.normal(0, sigma, size=senal.shape)
-            X.append(senal)
-            y.append(tipo)
+            sig = sig + rng.normal(0, sigma, size=sig.shape)
+            X.append(sig)
+            y.append(waveform)
     return np.array(X), np.array(y)
