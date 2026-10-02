@@ -1,7 +1,6 @@
 """Audio input/output: load, save and record."""
 import librosa
 import soundfile as sf
-import sounddevice as sd
 
 
 def load_audio(path, sr=None):
@@ -17,6 +16,9 @@ def save_audio(path, y, fs):
 
 def record_audio(duration, fs=44100):
     """Record from the default microphone for `duration` seconds (mono)."""
+    # Imported here so the package also works on machines without audio hardware (servers, cloud GPUs)
+    import sounddevice as sd
+
     y = sd.rec(int(duration * fs), samplerate=fs, channels=1, dtype="float32")
     sd.wait()                      # wait until the recording finishes
     return y[:, 0], fs

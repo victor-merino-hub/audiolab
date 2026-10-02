@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-from audiolab.deep import augment_spectrogram, cnn_predict_on_folds
+from audiolab.deep import augment_spectrogram, cnn_predict_on_folds, default_device
 from audiolab.esc50 import compute_features, load_metadata
 from audiolab.features import extract_logmel
 from audiolab.model import AudioCNN, count_parameters
@@ -34,7 +34,7 @@ folds = meta.fold.to_numpy()
 
 config = dict(keep_frequency=not args.global_frequency, augment=not args.no_augment, epochs=args.epochs)
 make_model = lambda: AudioCNN(n_classes=50, n_freq=S.shape[1], keep_frequency=config["keep_frequency"])
-print(f"{args.name}: {config} | {count_parameters(make_model()):,} weights", flush=True)
+print(f"{args.name}: {config} | {count_parameters(make_model()):,} weights | device: {default_device()}", flush=True)
 
 start = time.time()
 pred, histories = cnn_predict_on_folds(

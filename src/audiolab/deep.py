@@ -45,6 +45,11 @@ def prepare_data(X, y, fs, test_size=0.2, batch_size=32, seed=0):
     return train_loader, test_loader, (mean, std)
 
 
+def default_device():
+    """The GPU if PyTorch can use one, otherwise the CPU."""
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
 def augment_spectrogram(x, freq_mask=16, time_mask=32):
     """Random variants of a batch (batch, 1, freq, time), so the network cannot memorize clips.
 
@@ -66,6 +71,7 @@ def train_model(model, X, y, epochs=40, batch_size=32, lr=1e-3, weight_decay=1e-
                 verbose=False):
     """Train with AdamW and a one-cycle learning rate schedule. Returns the loss of each epoch."""
     start = time.time()
+    device = next(model.parameters()).device             # train wherever the model is (CPU or GPU)
     torch.manual_seed(seed)
     loader = DataLoader(TensorDataset(X, y), batch_size=batch_size, shuffle=True)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
@@ -77,6 +83,7 @@ def train_model(model, X, y, epochs=40, batch_size=32, lr=1e-3, weight_decay=1e-
         model.train()
         total = 0.0
         for xb, yb in loader:
+            xb, yb = xb.to(device), yb.to(device)
             if augment is not None:
                 xb = augment(xb)
             optimizer.zero_grad()
@@ -95,16 +102,19 @@ def train_model(model, X, y, epochs=40, batch_size=32, lr=1e-3, weight_decay=1e-
 def predict(model, X, batch_size=128):
     """Predicted class of each example."""
     model.eval()
-    return torch.cat([model(xb).argmax(dim=1) for xb in torch.split(X, batch_size)]).numpy()
+    device = next(model.parameters()).device
+    return torch.cat([model(xb.to(device)).argmax(dim=1).cpu() for xb in torch.split(X, batch_size)]).numpy()
 
 
-def cnn_predict_on_folds(make_model, S, y, folds, verbose=True, save_dir=None, **train_kwargs):
+def cnn_predict_on_folds(make_model, S, y, folds, verbose=True, save_dir=None, device=None, **train_kwargs):
     """Out-of-fold predictions of a CNN, like evaluation.predict_on_folds for scikit-learn models.
 
     make_model() must return a new, untrained network. S: spectrograms (n, freq, time).
     If save_dir is given, each fold's weights and normalization are saved there as fold{k}.pt.
+    device: where to train (default: the GPU if there is one).
     Returns the predictions and the training losses of each fold.
     """
+    device = device or default_device()
     pred = np.empty_like(y)
     histories = {}
     for k in np.unique(folds):
@@ -114,13 +124,14 @@ def cnn_predict_on_folds(make_model, S, y, folds, verbose=True, save_dir=None, *
         to_tensor = lambda A: torch.tensor((A - mean) / std, dtype=torch.float32).unsqueeze(1)
 
         torch.manual_seed(int(k))                              # same initial weights on every run
-        model = make_model()
+        model = make_model().to(device)
         histories[k] = train_model(model, to_tensor(S[~test]), torch.tensor(y[~test], dtype=torch.long),
                                    seed=int(k), verbose=verbose, **train_kwargs)
         pred[test] = predict(model, to_tensor(S[test]))
         if save_dir is not None:
             Path(save_dir).mkdir(parents=True, exist_ok=True)
-            torch.save({"state_dict": model.state_dict(), "mean": float(mean), "std": float(std)},
+            weights = {name: w.cpu() for name, w in model.state_dict().items()}   # loadable without a GPU
+            torch.save({"state_dict": weights, "mean": float(mean), "std": float(std)},
                        Path(save_dir) / f"fold{k}.pt")
         if verbose:
             acc = np.mean(pred[test] == y[test])

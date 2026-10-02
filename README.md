@@ -122,6 +122,10 @@ The ESC-50 notebooks expect the dataset (~600 MB) unzipped in `data/ESC-50/`: do
 [github.com/karolpiczak/ESC-50](https://github.com/karolpiczak/ESC-50). It is licensed
 CC BY-NC 3.0 by Karol J. Piczak and is not redistributed here.
 
+Training a CNN takes ~47 minutes on a laptop CPU. To use a free GPU instead, open
+[`gpu_training.ipynb`](notebooks/gpu_training.ipynb) in Google Colab or Kaggle: it clones this
+repository, downloads ESC-50, trains, and packages the models for download.
+
 ```python
 from audiolab.generator import generate_signal
 from audiolab.analysis import compute_spectrum
