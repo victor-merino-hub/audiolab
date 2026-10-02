@@ -19,6 +19,7 @@ with the 5 official cross-validation folds. Chance level is 2%.
 |---|---|---|---|
 | MFCC statistics + Random Forest | - | 47.6% ± 2.1% | 44.3% in the ESC-50 paper |
 | **CNN on log-mel spectrograms** | 149k | **76.5% ± 2.7%** | 64.5% in Piczak (2015) |
+| CNN trained with background noise | 149k | 75.0% ± 4.0% clean, **71.5%** with noise at 20 dB SNR | see [below](#the-digital-silence-shortcut-and-how-noise-training-removes-it) |
 | Human listeners | | | 81.3% |
 
 ![Accuracy of each model on the 5 official folds](docs/figures/esc50_models.png)
@@ -43,15 +44,32 @@ normalization.
 
 Notebooks: [exploration](notebooks/02_esc50_exploration.ipynb) · [baseline and leakage](notebooks/03_esc50_baseline.ipynb) · [CNN](notebooks/04_esc50_cnn.ipynb) · [robustness](notebooks/05_esc50_robustness.ipynb)
 
-### The digital silence shortcut
+### The digital silence shortcut, and how noise training removes it
 
 ESC-50 pads short clips to 5 s with exact zeros, more for some classes (glass breaking, sneezing)
 than others, and the network learns to use it. A real microphone never outputs exact zeros: adding
 pink background noise only 60 dB below the sound leaves the clips without padding untouched
-(77.3% → 77.3%) but costs the padded ones 9 points, and 42 points at 20 dB. The benchmark number
-is optimistic for short, impulsive sounds in the real world.
+(77.3% → 77.3%) but costs the padded ones 9 points, and 42 points at 20 dB.
 
-![Accuracy with background noise, padded vs. not padded clips](docs/figures/silence_shortcut.png)
+Training the same network with background noise (white, pink and brown, at random SNRs between
+10 and 60 dB, on 3 of every 4 training examples) removes the shortcut: padded and unpadded clips
+now behave the same at every noise level, and glass breaking stays at 95% instead of falling to 38%.
+It costs 2 points on the clean benchmark and gains 10 with noise at 20 dB (71.5% vs. 61.3%), which
+is the trade a device listening through a real microphone wants.
+
+![Accuracy with background noise, before and after noise training](docs/figures/silence_shortcut.png)
+
+**Noise augmentation without touching the audio: adding powers.** Instead of adding noise to the
+waveform and recomputing the log-mel spectrogram of every training example, the noise is mixed
+directly into the spectrogram. For uncorrelated signals
+
+$$|X + N|^2 = |X|^2 + |N|^2 + 2\,\mathrm{Re}(X N^*)$$
+
+and the cross term averages to zero (even more after summing the bins of each mel band), so powers
+simply add: `10·log10(10^(S/10) + g·10^(N/10))`, with the gain `g` set by the target SNR. Checked
+against mixing the waveforms, the median error is below 0.5 dB with no bias, and the augmentation
+costs almost nothing during training. The test noise (pink, added to the waveform) is not exactly
+the training noise, but both are synthetic: the real test is a live microphone.
 
 ### Data leakage: how a random split lies
 
@@ -106,7 +124,7 @@ matches the requested one, and time-stretching keeps the pitch.
       hearable-sized model gives up (accuracy vs. model size)
 - [x] **Digital silence shortcut**: measure the accuracy drop when the padding is replaced by
       background noise
-- [ ] **Noise augmentation**: train with background noise so the shortcut disappears
+- [x] **Noise augmentation**: train with background noise so the shortcut disappears
 - [ ] **Real-time demo**: classify live microphone input frame by frame
 - [ ] **Noise reduction**: spectral subtraction and Wiener filtering, then a small mask-estimation
       network, evaluated with SNR, PESQ and STOI
