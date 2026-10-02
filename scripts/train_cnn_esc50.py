@@ -1,7 +1,7 @@
 """Train the ESC-50 CNN with 5-fold cross-validation and save its out-of-fold predictions.
 
 Usage (from the repository root):
-    python scripts/train_cnn_esc50.py NAME [--global-frequency] [--no-augment] [--epochs 40]
+    python scripts/train_cnn_esc50.py NAME [--global-frequency] [--no-augment] [--noise] [--epochs 40]
 
 The results are saved to data/results/NAME.npz and analyzed in notebooks/04_esc50_cnn.ipynb.
 """
@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-from audiolab.deep import augment_spectrogram, cnn_predict_on_folds, default_device
+from audiolab.deep import augment_spectrogram, cnn_predict_on_folds, default_device, noise_bank_logmel
 from audiolab.esc50 import compute_features, load_metadata
 from audiolab.features import extract_logmel
 from audiolab.model import AudioCNN, count_parameters
@@ -23,6 +23,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("name")
 parser.add_argument("--global-frequency", action="store_true", help="average over frequency too")
 parser.add_argument("--no-augment", action="store_true")
+parser.add_argument("--noise", action="store_true", help="train with background noise (SNR 10-60 dB)")
 parser.add_argument("--epochs", type=int, default=40)
 args = parser.parse_args()
 
@@ -32,7 +33,8 @@ S = compute_features(DATA / "ESC-50", meta.filename, extract_logmel, sr=22050,
 y = meta.target.to_numpy()
 folds = meta.fold.to_numpy()
 
-config = dict(keep_frequency=not args.global_frequency, augment=not args.no_augment, epochs=args.epochs)
+config = dict(keep_frequency=not args.global_frequency, augment=not args.no_augment, noise=args.noise,
+              epochs=args.epochs)
 make_model = lambda: AudioCNN(n_classes=50, n_freq=S.shape[1], keep_frequency=config["keep_frequency"])
 print(f"{args.name}: {config} | {count_parameters(make_model()):,} weights | device: {default_device()}", flush=True)
 
@@ -41,6 +43,7 @@ pred, histories = cnn_predict_on_folds(
     make_model, S, y, folds, epochs=args.epochs,
     augment=augment_spectrogram if config["augment"] else None,
     save_dir=DATA / "models" / args.name,
+    noise_bank=noise_bank_logmel(S.shape[2]) if config["noise"] else None,
 )
 accs = [np.mean(pred[folds == k] == y[folds == k]) for k in np.unique(folds)]
 print(f"{args.name}: {np.mean(accs):.1%} ± {np.std(accs):.1%} in {(time.time() - start) / 60:.0f} min", flush=True)

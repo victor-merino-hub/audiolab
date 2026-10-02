@@ -10,6 +10,8 @@ from sklearn.model_selection import train_test_split
 
 from audiolab.analysis import compute_spectrogram
 from audiolab.dataset import WAVEFORMS
+from audiolab.features import extract_logmel
+from audiolab.processing import colored_noise
 
 
 def prepare_data(X, y, fs, test_size=0.2, batch_size=32, seed=0):
@@ -67,6 +69,52 @@ def augment_spectrogram(x, freq_mask=16, time_mask=32):
     return x
 
 
+def mix_noise_db(S_db, N_db, snr_db):
+    """Add noise to log-mel spectrograms by summing powers, without going back to the audio.
+
+    For uncorrelated signals |X + N|^2 = |X|^2 + |N|^2 + 2 Re(X N*), and the cross term averages
+    to zero, so powers add. S_db, N_db: (batch, 1, n_mels, frames) in dB; snr_db: (batch,).
+    The signal power is measured on its frames that are not digital silence (-100 dB, the floor of
+    features.extract_logmel), like processing.add_noise does on the waveform.
+    """
+    P_s, P_n = 10 ** (S_db / 10), 10 ** (N_db / 10)
+    active = (S_db > -99).any(dim=2)                                    # (batch, 1, frames)
+    frame_power = P_s.sum(dim=2)
+    signal = (frame_power * active).sum(-1) / active.sum(-1).clamp(min=1)
+    noise = P_n.sum(dim=2).mean(-1)
+    gain = signal / noise / 10 ** (snr_db.view(-1, 1) / 10)               # noise scaling for the SNR
+    return 10 * torch.log10(P_s + gain.view(-1, 1, 1, 1) * P_n)
+
+
+def noise_bank_logmel(n_frames, n_per_color=32, sr=22050, hop_length=512, seed=0):
+    """Log-mel spectrograms of white, pink and brown noise: (3 * n_per_color, 1, n_mels, n_frames)."""
+    rng = np.random.default_rng(seed)
+    n_samples = (n_frames - 1) * hop_length
+    bank = [extract_logmel(colored_noise(n_samples, exponent, rng), sr, hop_length=hop_length)
+            for exponent in (0, 1, 2) for _ in range(n_per_color)]
+    return torch.tensor(np.array(bank), dtype=torch.float32).unsqueeze(1)
+
+
+def make_noise_augment(noise_bank, mean, std, snr_range=(10, 60), p=0.75, then=None):
+    """Augmentation that adds background noise to *normalized* spectrograms, then applies `then`.
+
+    Each example gets, with probability p, a random noise of the bank at a random SNR (dB) in
+    snr_range, so that the network never relies on exact digital silence.
+    """
+    mean, std = float(mean), float(std)
+
+    def augment(x):
+        S = x * std + mean                                               # back to dB
+        n = len(x)
+        noisy = torch.rand(n, device=x.device) < p
+        N = noise_bank[torch.randint(len(noise_bank), (n,))].to(x.device)
+        snr = torch.empty(n, device=x.device).uniform_(*snr_range)
+        S = torch.where(noisy.view(-1, 1, 1, 1), mix_noise_db(S, N, snr), S)
+        x = (S - mean) / std
+        return then(x) if then is not None else x
+    return augment
+
+
 def train_model(model, X, y, epochs=40, batch_size=32, lr=1e-3, weight_decay=1e-3, augment=None, seed=0,
                 verbose=False):
     """Train with AdamW and a one-cycle learning rate schedule. Returns the loss of each epoch."""
@@ -106,15 +154,19 @@ def predict(model, X, batch_size=128):
     return torch.cat([model(xb.to(device)).argmax(dim=1).cpu() for xb in torch.split(X, batch_size)]).numpy()
 
 
-def cnn_predict_on_folds(make_model, S, y, folds, verbose=True, save_dir=None, device=None, **train_kwargs):
+def cnn_predict_on_folds(make_model, S, y, folds, verbose=True, save_dir=None, device=None,
+                         noise_bank=None, noise_snr=(10, 60), noise_p=0.75, **train_kwargs):
     """Out-of-fold predictions of a CNN, like evaluation.predict_on_folds for scikit-learn models.
 
     make_model() must return a new, untrained network. S: spectrograms (n, freq, time).
     If save_dir is given, each fold's weights and normalization are saved there as fold{k}.pt.
     device: where to train (default: the GPU if there is one).
+    noise_bank: if given (see noise_bank_logmel), training examples get background noise
+    (make_noise_augment) before the `augment` of train_kwargs.
     Returns the predictions and the training losses of each fold.
     """
     device = device or default_device()
+    augment = train_kwargs.pop("augment", None)
     pred = np.empty_like(y)
     histories = {}
     for k in np.unique(folds):
@@ -125,8 +177,11 @@ def cnn_predict_on_folds(make_model, S, y, folds, verbose=True, save_dir=None, d
 
         torch.manual_seed(int(k))                              # same initial weights on every run
         model = make_model().to(device)
+        fold_augment = augment
+        if noise_bank is not None:                             # the noise needs this fold's mean and std
+            fold_augment = make_noise_augment(noise_bank.to(device), mean, std, noise_snr, noise_p, then=augment)
         histories[k] = train_model(model, to_tensor(S[~test]), torch.tensor(y[~test], dtype=torch.long),
-                                   seed=int(k), verbose=verbose, **train_kwargs)
+                                   seed=int(k), verbose=verbose, augment=fold_augment, **train_kwargs)
         pred[test] = predict(model, to_tensor(S[test]))
         if save_dir is not None:
             Path(save_dir).mkdir(parents=True, exist_ok=True)

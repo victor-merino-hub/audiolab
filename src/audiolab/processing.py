@@ -19,17 +19,25 @@ def time_stretch(y, fs, factor):
     return librosa.effects.time_stretch(y, rate=factor), fs
 
 
-def pink_noise(n, rng=None):
-    """n samples of pink noise (power ~ 1/f: equal energy per octave), with unit standard deviation.
+def colored_noise(n, exponent, rng=None):
+    """n samples of noise with power ~ 1/f^exponent, with unit standard deviation.
 
-    Many real backgrounds (fans, distant traffic, a room) are closer to pink than to white noise.
+    exponent 0: white (equal energy per Hz), 1: pink (equal energy per octave), 2: brown.
     """
     rng = np.random.default_rng(rng)
     spectrum = np.fft.rfft(rng.normal(size=n))
     f = np.arange(len(spectrum))
     f[0] = 1                                      # avoid dividing by zero at DC
-    noise = np.fft.irfft(spectrum / np.sqrt(f), n)    # amplitude ~ 1/sqrt(f) -> power ~ 1/f
+    noise = np.fft.irfft(spectrum / f ** (exponent / 2), n)    # amplitude ~ f^(-e/2) -> power ~ f^(-e)
     return noise / np.std(noise)
+
+
+def pink_noise(n, rng=None):
+    """n samples of pink noise (power ~ 1/f: equal energy per octave), with unit standard deviation.
+
+    Many real backgrounds (fans, distant traffic, a room) are closer to pink than to white noise.
+    """
+    return colored_noise(n, 1, rng)
 
 
 def add_noise(y, snr_db, rng=None):

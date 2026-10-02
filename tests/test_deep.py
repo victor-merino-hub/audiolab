@@ -4,9 +4,10 @@ import torch
 
 from audiolab.dataset import generate_dataset
 from audiolab.generator import generate_signal
+from audiolab.processing import colored_noise
 from audiolab.features import extract_logmel
-from audiolab.deep import (augment_spectrogram, cnn_predict_on_folds, predict,
-                           predict_with_saved_folds, prepare_data)
+from audiolab.deep import (augment_spectrogram, cnn_predict_on_folds, make_noise_augment, mix_noise_db,
+                           noise_bank_logmel, predict, predict_with_saved_folds, prepare_data)
 from audiolab.model import AudioCNN
 
 
@@ -80,3 +81,36 @@ def test_prepare_data():
     S_train = train_loader.dataset.tensors[0]
     assert S_train.mean().item() == pytest.approx(0, abs=1e-4)
     assert S_train.std().item() == pytest.approx(1, abs=1e-2)
+
+
+def test_mix_noise_db_matches_mixing_the_audio():
+    # Adding powers in the log-mel domain ~ adding the waveforms (the cross term averages out)
+    fs = 22050
+    _, tone = generate_signal("sine", 440, 0.5, fs, 2.0)
+    noise = colored_noise(len(tone), 1, rng=0) * 0.05
+    slow = extract_logmel(tone + noise, fs)
+    to_t = lambda A: torch.tensor(A, dtype=torch.float32)[None, None]
+    S, N = to_t(extract_logmel(tone, fs)), to_t(extract_logmel(noise, fs))
+    snr = 10 * torch.log10((10 ** (S / 10)).sum(2).mean() / (10 ** (N / 10)).sum(2).mean())   # gain = 1
+    fast = mix_noise_db(S, N, snr.view(1)).numpy()[0, 0]
+    err = slow - fast
+    assert np.median(np.abs(err)) < 0.5
+    assert abs(np.mean(err)) < 0.5                     # no bias
+
+
+def test_mix_noise_db_removes_digital_silence():
+    S = torch.full((2, 1, 16, 20), -100.0)
+    S[:, :, :, :10] = -20.0                            # half sound, half digital silence
+    N = torch.full((2, 1, 16, 20), -40.0)
+    out = mix_noise_db(S, N, torch.tensor([20.0, 40.0]))
+    assert torch.all(out > -99)                        # no exact silence left
+    # Requested SNR: noise power 20 / 40 dB below the signal power
+    assert out[0, 0, 0, -1].item() == pytest.approx(-40.0, abs=0.1)
+    assert out[1, 0, 0, -1].item() == pytest.approx(-60.0, abs=0.1)
+
+
+def test_noise_augment_probability():
+    bank = noise_bank_logmel(n_frames=20, n_per_color=2)
+    x = torch.zeros(8, 1, 128, 20)
+    assert torch.equal(make_noise_augment(bank, mean=-50, std=10, p=0)(x), x)
+    assert not torch.equal(make_noise_augment(bank, mean=-50, std=10, p=1)(x), x)

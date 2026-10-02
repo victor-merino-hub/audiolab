@@ -4,7 +4,7 @@ import pytest
 
 from audiolab.analysis import compute_spectrum
 from audiolab.generator import generate_signal
-from audiolab.processing import add_noise, change_speed, pink_noise, time_stretch
+from audiolab.processing import add_noise, change_speed, colored_noise, pink_noise, time_stretch
 
 
 def peak_frequency(y, fs):
@@ -54,3 +54,12 @@ def test_add_noise_snr_ignores_digital_silence(snr_db):
     measured = 10 * np.log10(np.mean(tone ** 2) / np.mean(noise ** 2))
     assert measured == pytest.approx(snr_db, abs=0.1)
     assert np.all(noisy[fs:] != 0)                    # no exact zeros left
+
+
+@pytest.mark.parametrize("exponent, ratio", [(0, 20), (1, 1), (2, 1 / 20)])
+def test_colored_noise_spectral_slope(exponent, ratio):
+    # Energy in 2-4 kHz vs 100-200 Hz: white ~ bandwidth ratio (20), pink 1, brown 1/20
+    fs = 16000
+    f, P = signal.welch(colored_noise(fs * 10, exponent, rng=0), fs, nperseg=4096)
+    band = lambda lo, hi: P[(f >= lo) & (f < hi)].sum()
+    assert band(2000, 4000) / band(100, 200) == pytest.approx(ratio, rel=0.25)
