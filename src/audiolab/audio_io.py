@@ -4,9 +4,9 @@ import soundfile as sf
 import sounddevice as sd
 
 
-def load_audio(path):
-    """Load an audio file as mono, keeping its original sampling rate."""
-    y, fs = librosa.load(path, sr=None, mono=True)
+def load_audio(path, sr=None):
+    """Load an audio file as mono. sr=None keeps the original sampling rate, otherwise resamples."""
+    y, fs = librosa.load(path, sr=sr, mono=True)
     return y, fs
 
 

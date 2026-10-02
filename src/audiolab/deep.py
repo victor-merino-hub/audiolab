@@ -1,6 +1,10 @@
-"""Data preparation for neural networks (PyTorch)."""
+"""Data preparation, training and evaluation for neural networks (PyTorch)."""
+import time
+from pathlib import Path
+
 import numpy as np
 import torch
+import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
 from sklearn.model_selection import train_test_split
 
@@ -39,3 +43,86 @@ def prepare_data(X, y, fs, test_size=0.2, batch_size=32, seed=0):
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False)
     return train_loader, test_loader, (mean, std)
+
+
+def augment_spectrogram(x, freq_mask=16, time_mask=32):
+    """Random variants of a batch (batch, 1, freq, time), so the network cannot memorize clips.
+
+    Each example is shifted circularly in time by a random amount, and gets one random band of
+    frequencies and one random stretch of time set to zero (SpecAugment).
+    """
+    x = x.clone()
+    n_freq, n_time = x.shape[2], x.shape[3]
+    for i in range(len(x)):
+        x[i] = torch.roll(x[i], shifts=int(torch.randint(n_time, ())), dims=2)
+        f0 = int(torch.randint(n_freq - freq_mask, ()))
+        t0 = int(torch.randint(n_time - time_mask, ()))
+        x[i, :, f0:f0 + freq_mask, :] = 0
+        x[i, :, :, t0:t0 + time_mask] = 0
+    return x
+
+
+def train_model(model, X, y, epochs=40, batch_size=32, lr=1e-3, weight_decay=1e-3, augment=None, seed=0,
+                verbose=False):
+    """Train with AdamW and a one-cycle learning rate schedule. Returns the loss of each epoch."""
+    start = time.time()
+    torch.manual_seed(seed)
+    loader = DataLoader(TensorDataset(X, y), batch_size=batch_size, shuffle=True)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=lr, total_steps=epochs * len(loader))
+    loss_fn = nn.CrossEntropyLoss()
+
+    losses = []
+    for _ in range(epochs):
+        model.train()
+        total = 0.0
+        for xb, yb in loader:
+            if augment is not None:
+                xb = augment(xb)
+            optimizer.zero_grad()
+            loss = loss_fn(model(xb), yb)     # 1. predict and measure the error
+            loss.backward()                   # 2. gradient of the error for every weight
+            optimizer.step()                  # 3. move each weight against its gradient
+            scheduler.step()
+            total += loss.item() * len(xb)
+        losses.append(total / len(X))
+        if verbose:
+            print(f"  epoch {len(losses):2d}/{epochs}: loss {losses[-1]:.3f}  ({time.time() - start:.0f} s)", flush=True)
+    return losses
+
+
+@torch.no_grad()
+def predict(model, X, batch_size=128):
+    """Predicted class of each example."""
+    model.eval()
+    return torch.cat([model(xb).argmax(dim=1) for xb in torch.split(X, batch_size)]).numpy()
+
+
+def cnn_predict_on_folds(make_model, S, y, folds, verbose=True, save_dir=None, **train_kwargs):
+    """Out-of-fold predictions of a CNN, like evaluation.predict_on_folds for scikit-learn models.
+
+    make_model() must return a new, untrained network. S: spectrograms (n, freq, time).
+    If save_dir is given, each fold's weights and normalization are saved there as fold{k}.pt.
+    Returns the predictions and the training losses of each fold.
+    """
+    pred = np.empty_like(y)
+    histories = {}
+    for k in np.unique(folds):
+        start = time.time()
+        test = folds == k
+        mean, std = S[~test].mean(), S[~test].std()           # statistics of the TRAINING folds only
+        to_tensor = lambda A: torch.tensor((A - mean) / std, dtype=torch.float32).unsqueeze(1)
+
+        torch.manual_seed(int(k))                              # same initial weights on every run
+        model = make_model()
+        histories[k] = train_model(model, to_tensor(S[~test]), torch.tensor(y[~test], dtype=torch.long),
+                                   seed=int(k), verbose=verbose, **train_kwargs)
+        pred[test] = predict(model, to_tensor(S[test]))
+        if save_dir is not None:
+            Path(save_dir).mkdir(parents=True, exist_ok=True)
+            torch.save({"state_dict": model.state_dict(), "mean": float(mean), "std": float(std)},
+                       Path(save_dir) / f"fold{k}.pt")
+        if verbose:
+            acc = np.mean(pred[test] == y[test])
+            print(f"Fold {k}: {acc:.1%}  (final loss {histories[k][-1]:.2f}, {time.time() - start:.0f} s)")
+    return pred, histories

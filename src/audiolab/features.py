@@ -9,6 +9,16 @@ def extract_mfcc_features(y, fs, n_mfcc=20):
     return np.concatenate([mfcc.mean(axis=1), mfcc.std(axis=1)])
 
 
+def extract_logmel(y, fs, n_mels=128, n_fft=1024, hop_length=512):
+    """Log-mel spectrogram in dB: matrix (n_mels, frames). The input of the CNN.
+
+    It is the MFCC pipeline without the last two steps (DCT and averaging over time),
+    so it keeps the full time-frequency structure.
+    """
+    S = librosa.feature.melspectrogram(y=y, sr=fs, n_fft=n_fft, hop_length=hop_length, n_mels=n_mels)
+    return librosa.power_to_db(S, ref=1.0, top_db=None)
+
+
 def extract_mfcc_features_dataset(X, fs, n_mfcc=20):
     """Apply extract_mfcc_features to each row of X. Returns a matrix (n_signals, 2*n_mfcc)."""
     return np.array([extract_mfcc_features(sig, fs, n_mfcc) for sig in X])
