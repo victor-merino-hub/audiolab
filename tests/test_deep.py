@@ -5,7 +5,8 @@ import torch
 from audiolab.dataset import generate_dataset
 from audiolab.generator import generate_signal
 from audiolab.features import extract_logmel
-from audiolab.deep import augment_spectrogram, cnn_predict_on_folds, predict, prepare_data
+from audiolab.deep import (augment_spectrogram, cnn_predict_on_folds, predict,
+                           predict_with_saved_folds, prepare_data)
 from audiolab.model import AudioCNN
 
 
@@ -59,6 +60,7 @@ def test_cnn_pipeline_learns_an_easy_task(tmp_path):
     model.load_state_dict(saved["state_dict"])
     X1 = torch.tensor((S[folds == 1] - saved["mean"]) / saved["std"], dtype=torch.float32).unsqueeze(1)
     assert np.array_equal(predict(model, X1), pred[folds == 1])
+    assert np.array_equal(predict_with_saved_folds(tmp_path, make_model, S, folds), pred)
 
 
 def test_prepare_data():

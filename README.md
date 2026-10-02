@@ -31,9 +31,27 @@ and car horn from 10% to 82%. Two design experiments, with everything else fixed
   should not change the class, but frequency position does: a steady tone is a car horn or an
   alarm depending on where it sits. Without it the network cannot even fit its training set.
 - **Data augmentation** (time shift + SpecAugment): no measurable gain here (76.5% vs 76.2%). The
-  time shift is redundant with a network that already averages over time.
+  time shift is redundant with a network that already averages over time. For scale: retraining
+  the same model on a GPU instead of the CPU changes 9% of the predictions and the mean by 0.5
+  points, so differences below ~1 point are noise.
 
-Notebooks: [exploration](notebooks/02_esc50_exploration.ipynb) · [baseline and leakage](notebooks/03_esc50_baseline.ipynb) · [CNN](notebooks/04_esc50_cnn.ipynb)
+**Sanity checks** before trusting a result this far above the reference: training on shuffled
+labels gives 2.2% (chance: 2%), so nothing leaks from the test folds; and the class-dependent
+band-limiting the dataset authors warn about is a weak cue (3.9% on its own). The gap with the 2015
+CNN is mostly a smaller model (149k vs ~26M weights), whole clips instead of 1 s segments, and batch
+normalization.
+
+Notebooks: [exploration](notebooks/02_esc50_exploration.ipynb) · [baseline and leakage](notebooks/03_esc50_baseline.ipynb) · [CNN](notebooks/04_esc50_cnn.ipynb) · [robustness](notebooks/05_esc50_robustness.ipynb)
+
+### The digital silence shortcut
+
+ESC-50 pads short clips to 5 s with exact zeros, more for some classes (glass breaking, sneezing)
+than others, and the network learns to use it. A real microphone never outputs exact zeros: adding
+pink background noise only 60 dB below the sound leaves the clips without padding untouched
+(77.3% → 77.3%) but costs the padded ones 9 points, and 42 points at 20 dB. The benchmark number
+is optimistic for short, impulsive sounds in the real world.
+
+![Accuracy with background noise, padded vs. not padded clips](docs/figures/silence_shortcut.png)
 
 ### Data leakage: how a random split lies
 
@@ -56,7 +74,7 @@ trained on.
 |---|---|
 | `generator` | Periodic signals (sine, square, triangle, sawtooth) with aliasing checks |
 | `analysis` | FFT spectrum and spectrogram |
-| `processing` | Speed change vs. time-stretch (phase vocoder) |
+| `processing` | Speed change vs. time-stretch (phase vocoder), pink background noise at a given SNR |
 | `audio_io` | Load, save and record audio |
 | `dataset` | Labeled synthetic datasets with a controlled SNR |
 | `features` | MFCC, log-mel spectrograms and harmonic-structure features |
@@ -86,9 +104,9 @@ matches the requested one, and time-stretching keeps the pitch.
 - [x] **CNN on log-mel spectrograms** (ESC-50), with error analysis
 - [ ] **Pretrained audio model** (AudioSet embeddings): the accuracy ceiling, and how much a
       hearable-sized model gives up (accuracy vs. model size)
-- [ ] **Robustness to real microphones**: ESC-50 pads short clips with digital silence (exact zeros),
-      which no real microphone produces. Measure the accuracy drop when that silence is replaced
-      by background noise, then train with noise augmentation
+- [x] **Digital silence shortcut**: measure the accuracy drop when the padding is replaced by
+      background noise
+- [ ] **Noise augmentation**: train with background noise so the shortcut disappears
 - [ ] **Real-time demo**: classify live microphone input frame by frame
 - [ ] **Noise reduction**: spectral subtraction and Wiener filtering, then a small mask-estimation
       network, evaluated with SNR, PESQ and STOI

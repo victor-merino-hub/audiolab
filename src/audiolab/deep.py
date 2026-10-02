@@ -137,3 +137,20 @@ def cnn_predict_on_folds(make_model, S, y, folds, verbose=True, save_dir=None, d
             acc = np.mean(pred[test] == y[test])
             print(f"Fold {k}: {acc:.1%}  (final loss {histories[k][-1]:.2f}, {time.time() - start:.0f} s)")
     return pred, histories
+
+
+def predict_with_saved_folds(model_dir, make_model, S, folds):
+    """Out-of-fold predictions with the models saved by cnn_predict_on_folds(save_dir=model_dir).
+
+    Each sample is classified by the model of its own fold, which never saw it during training,
+    so modified versions of the data (noise, filtering...) can be evaluated without retraining.
+    """
+    pred = np.empty(len(S), dtype=int)
+    for k in np.unique(folds):
+        saved = torch.load(Path(model_dir) / f"fold{k}.pt")
+        model = make_model()
+        model.load_state_dict(saved["state_dict"])
+        test = folds == k
+        X = torch.tensor((S[test] - saved["mean"]) / saved["std"], dtype=torch.float32).unsqueeze(1)
+        pred[test] = predict(model, X)
+    return pred
