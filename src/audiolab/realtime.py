@@ -46,16 +46,26 @@ class RingBuffer:
         return np.concatenate([self.data[start:], self.data[:self.pos]])   # concatenate already copies
 
 
+def _from_checkpoint(saved):
+    """(model, mean, std) from a saved dict with the weights and the input normalization."""
+    model = AudioCNN()
+    model.load_state_dict(saved["state_dict"])
+    model.eval()                        # batch norm with its stored statistics, no dropout
+    return model, saved["mean"], saved["std"]
+
+
 def load_models(model_dir, folds=(1,)):
     """Load the fold models saved by deep.cnn_predict_on_folds: a list of (model, mean, std)."""
-    models = []
-    for k in folds:
-        saved = torch.load(Path(model_dir) / f"fold{k}.pt")
-        model = AudioCNN()
-        model.load_state_dict(saved["state_dict"])
-        model.eval()                    # batch norm with its stored statistics, no dropout
-        models.append((model, saved["mean"], saved["std"]))
-    return models
+    return [_from_checkpoint(torch.load(Path(model_dir) / f"fold{k}.pt")) for k in folds]
+
+
+def load_packaged_model(path):
+    """Load a self-contained model file (weights, normalization and class names), like models/*.pt.
+
+    Returns ([(model, mean, std)], class names), ready for class_probabilities.
+    """
+    saved = torch.load(path)
+    return [_from_checkpoint(saved)], list(saved["classes"])
 
 
 def to_model_rate(y, sr):

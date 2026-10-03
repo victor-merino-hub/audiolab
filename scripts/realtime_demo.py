@@ -27,10 +27,12 @@ import numpy as np
 import sounddevice as sd
 
 from audiolab.audio_io import save_audio
-from audiolab.esc50 import load_metadata
-from audiolab.realtime import RingBuffer, WindowClassifier, background_level_db, class_probabilities, load_models
+from audiolab.realtime import (RingBuffer, WindowClassifier, background_level_db, class_probabilities, load_models,
+                               load_packaged_model)
 
-DATA = Path(__file__).resolve().parents[1] / "data"
+ROOT = Path(__file__).resolve().parents[1]
+MODEL = ROOT / "models" / "esc50_cnn_noise.pt"     # included in the repository
+FOLD_MODELS = ROOT / "data" / "models" / "cnn_noise"   # the 5 fold models, after training them locally
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--window", type=float, default=2.0, help="seconds of audio in each prediction")
@@ -39,8 +41,8 @@ parser.add_argument("--alpha", type=float, default=0.5, help="smoothing: 1 = non
 parser.add_argument("--margin", type=float, default=10.0, help="dB above the background to count as an event")
 parser.add_argument("--comfort-db", type=float, default=None, help="add pink comfort noise at this dBFS level")
 parser.add_argument("--min-prob", type=float, default=0.4, help="show 'not sure' below this top-1 probability")
-parser.add_argument("--ensemble", action="store_true", help="average the 5 fold models instead of using one")
-parser.add_argument("--model", default="cnn_noise", help="folder in data/models")
+parser.add_argument("--ensemble", action="store_true",
+                    help="average the 5 fold models (needs scripts/train_cnn_esc50.py cnn_noise --noise first)")
 parser.add_argument("--device", type=int, default=None, help="input device (see --list-devices)")
 parser.add_argument("--duration", type=float, default=None, help="stop after this many seconds")
 parser.add_argument("--log", default=None, help="save every prediction to this CSV file (and the audio as .wav)")
@@ -51,9 +53,10 @@ if args.list_devices:
     print(sd.query_devices())
     sys.exit()
 
-meta = load_metadata(DATA / "ESC-50")
-classes = meta.drop_duplicates("target").sort_values("target").category.to_numpy()
-models = load_models(DATA / "models" / args.model, folds=range(1, 6) if args.ensemble else (1,))
+models, classes = load_packaged_model(MODEL)
+classes = np.array(classes)
+if args.ensemble:
+    models = load_models(FOLD_MODELS, folds=range(1, 6))
 
 sr = int(sd.query_devices(args.device, "input")["default_samplerate"])   # the microphone's own rate
 n_window = int(args.window * sr)
@@ -101,7 +104,7 @@ log = open(args.log, "w") if args.log else None
 if log:
     log.write("time,level_db,peak_db,event,compute_ms,top1,p1,top2,p2,top3,p3\n")
 
-print(f"{args.model} ({len(models)} model{'s' if len(models) > 1 else ''}) | microphone at {sr} Hz | "
+print(f"cnn_noise ({len(models)} model{'s' if len(models) > 1 else ''}) | microphone at {sr} Hz | "
       f"window {args.window} s, hop {args.hop} s, alpha {args.alpha}, comfort noise {args.comfort_db} dBFS"
       f" | Ctrl+C to stop")
 with sd.InputStream(device=args.device, channels=1, samplerate=sr, callback=callback) as stream:

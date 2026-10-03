@@ -172,6 +172,7 @@ matches the requested one, and time-stretching keeps the pitch.
 src/audiolab/   the package
 notebooks/      experiments and explanations
 scripts/        training, live demo and evaluation scripts
+models/         the trained model used by the live demo
 docs/figures/   figures used in this README
 tests/          pytest test suite
 data/           audio files (not committed)
@@ -192,10 +193,12 @@ pytest
 
 The ESC-50 notebooks expect the dataset (~600 MB) unzipped in `data/ESC-50/`: download it from
 [github.com/karolpiczak/ESC-50](https://github.com/karolpiczak/ESC-50). It is licensed
-CC BY-NC 3.0 by Karol J. Piczak and is not redistributed here.
+CC BY-NC 3.0 by Karol J. Piczak and is not redistributed here. The included model was trained on it,
+so to respect that license its weights are for non-commercial use only.
 
-The live demo needs a trained model (`python scripts/train_cnn_esc50.py cnn_noise --noise`) and a
-microphone. Stay quiet for the first 2 s, while it measures the background:
+The trained model used by the live demo is included ([`models/esc50_cnn_noise.pt`](models/), 600 KB:
+weights, input normalization and class names), so the demo only needs a microphone. Stay quiet for the
+first 2 s, while it measures the background:
 
 ```bash
 python scripts/realtime_demo.py

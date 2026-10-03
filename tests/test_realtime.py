@@ -1,6 +1,11 @@
+from pathlib import Path
+
 import numpy as np
 
-from audiolab.realtime import RingBuffer, add_comfort_noise, frame_levels_db
+from audiolab.realtime import (RingBuffer, add_comfort_noise, class_probabilities, frame_levels_db,
+                               load_packaged_model)
+
+MODEL = Path(__file__).resolve().parents[1] / "models" / "esc50_cnn_noise.pt"
 
 
 def test_read_after_one_write():
@@ -65,3 +70,12 @@ def test_comfort_noise_level():
     y = add_comfort_noise(np.zeros(44100, dtype=np.float32), -60, rng=0)
     assert y.dtype == np.float32
     np.testing.assert_allclose(10 * np.log10(np.mean(y ** 2)), -60, atol=0.1)
+
+
+def test_packaged_model_classifies_a_window():
+    models, classes = load_packaged_model(MODEL)
+    assert len(classes) == 50 and classes[0] == "dog"
+    y = 0.01 * np.random.default_rng(0).standard_normal(2 * 22050).astype(np.float32)   # 2 s of noise
+    p = class_probabilities(models, y)
+    assert p.shape == (50,)
+    np.testing.assert_allclose(p.sum(), 1, atol=1e-5)
