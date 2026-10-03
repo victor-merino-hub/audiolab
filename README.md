@@ -80,6 +80,8 @@ the design, not by the CPU: a sound appears at most one hop after it starts and 
 after it ends. Two things the benchmark never needed: a **level gate**, because the CNN must name one
 of its 50 classes even for an empty room (it called silence "snoring"), and a **confidence threshold**.
 
+![The live demo: keyboard typing, a sound it is not sure about, door knocks and breathing](docs/figures/realtime_demo.gif)
+
 To evaluate it, I recorded 40 s sessions at home repeating one sound (5 ESC-50 classes, plus speech
 and music) and replayed them offline through exactly the same code as the live demo.
 
