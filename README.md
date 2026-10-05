@@ -107,6 +107,39 @@ glass breaking from 17% to 2% of the windows.
 One person, room and microphone, and 5 classes: the direction of these effects is clear, differences
 of a few points are not. Notebook: [real-time evaluation](notebooks/06_realtime.ipynb)
 
+### Noise reduction under a hearing-aid latency budget
+
+A hearing aid has to clean the speech it amplifies within ~10 ms: in an open fitting the direct sound
+also reaches the ear, and a processed copy arriving later turns the sum into a comb filter. Textbook
+noise reduction uses 32 ms frames. The classical single-microphone pipeline is implemented frame by
+frame, exactly as it would run live ([`enhancement`](src/audiolab/enhancement.py)): STFT analysis and
+weighted overlap-add synthesis, a noise estimate tracked while the person talks, and a gain per
+frequency bin. Its latency is the frame length, so that is the axis of the experiment. Evaluated on the
+824 sentences of the VoiceBank+DEMAND test set, the standard benchmark (16 kHz):
+
+![SI-SDR and STOI vs. frame length](docs/figures/denoising_latency.png)
+
+- **The price of latency.** The Wiener gain with a decision-directed SNR estimate takes SI-SDR from
+  8.4 dB to 14.7 dB with 32 ms frames, but to 12.0 dB with 8 ms and 10.0 dB with 4 ms. An **oracle** gain,
+  computed from the true speech and noise, separates the two causes: it also falls (18.9 → 15.3 dB),
+  because short frames cannot resolve the harmonics of the voice, and the gap from the oracle to the
+  real method, which is the cost of estimating, grows from 4.2 to 5.3 dB.
+- **The noise estimator matters as much as the gain rule.** The classic minimum-tracking estimator
+  (MCRA) takes in the start of every word before its speech detector reacts, and overestimates the noise
+  by 1-3 dB, so the gain cuts speech; at 4 ms its output is worse than the noisy input. Replacing it with
+  a speech-presence-probability estimator gains 2-3 dB at every frame length.
+- **Cleaner, but not more intelligible.** No real method raises STOI above the noisy input (0.921), and
+  the one that removes the most noise lowers it most, especially at low SNR, where help is needed most.
+  The oracle reaches 0.946-0.958, so a gain per bin *can* help intelligibility; the classical estimate of
+  it cannot. For a device whose purpose is understanding speech, this is the case for a learned
+  estimator, and why hearing aids limit the attenuation: a −6 to −10 dB floor keeps STOI near the input
+  and still gains 2.6-3.3 dB of SI-SDR at 8 ms.
+
+![Spectrograms of one sentence: clean, noisy, and four gains](docs/figures/denoising_spectrograms.png)
+
+PESQ (perceived quality) runs in Colab ([`denoising_pesq.ipynb`](notebooks/denoising_pesq.ipynb)),
+since the package needs a C compiler. Notebook: [noise reduction](notebooks/07_noise_reduction.ipynb)
+
 ### Data leakage: how a random split lies
 
 40% of the ESC-50 clips were cut from the same original recording as another clip, and share its
@@ -136,10 +169,14 @@ trained on.
 | `esc50` | ESC-50 metadata and clip loading |
 | `evaluation` | Cross-validation on predefined folds, random folds for comparison |
 | `realtime` | Ring buffer, level gate and live classification of microphone audio, with offline replay of recorded sessions |
+| `enhancement` | Streaming STFT/WOLA, noise estimation (MCRA, speech presence probability), spectral subtraction and Wiener gains, oracle gain, SI-SDR |
 
 Scripts live in [`scripts/`](scripts/): `train_cnn_esc50.py` trains a CNN configuration with 5-fold
 cross-validation and saves its predictions for the analysis notebook; `realtime_demo.py` runs the live
-demo and can record sessions, which `evaluate_home.py` replays offline with any settings.
+demo and can record sessions, which `evaluate_home.py` replays offline with any settings;
+`evaluate_denoising.py` runs every noise reduction method on the VoiceBank+DEMAND test set; and
+`hearing_aid_demo.py` is a minimal live hearing aid (microphone → noise reduction → wired headphones)
+that also measures the latency of the audio chain.
 
 The notebook [`01_fundamentals.ipynb`](notebooks/01_fundamentals.ipynb) walks through all of
 them. One result from it: a RandomForest classifying waveforms reaches ~0.89 accuracy with
@@ -164,8 +201,10 @@ matches the requested one, and time-stretching keeps the pitch.
       background noise
 - [x] **Noise augmentation**: train with background noise so the shortcut disappears
 - [x] **Real-time demo**: classify live microphone input, and measure it on sounds recorded at home
-- [ ] **Noise reduction**: spectral subtraction and Wiener filtering, then a small mask-estimation
-      network, evaluated with SNR, PESQ and STOI
+- [x] **Noise reduction**: spectral subtraction and Wiener filtering frame by frame, with the quality
+      vs. latency trade-off measured on VoiceBank+DEMAND (SI-SDR, STOI)
+- [ ] **Noise reduction, next**: PESQ, the live hearing-aid demo with its measured latency, then a small
+      network that estimates the gain
 - [ ] **Hearable constraints**: latency budget, model size, quantization / ONNX export
 
 ## Project structure
@@ -197,6 +236,10 @@ The ESC-50 notebooks expect the dataset (~600 MB) unzipped in `data/ESC-50/`: do
 [github.com/karolpiczak/ESC-50](https://github.com/karolpiczak/ESC-50). It is licensed
 CC BY-NC 3.0 by Karol J. Piczak and is not redistributed here. The included model was trained on it,
 so to respect that license its weights are for non-commercial use only.
+
+The noise reduction notebook expects the VoiceBank+DEMAND test set (~310 MB, CC BY 4.0) in
+`data/voicebank/`: `clean_testset_wav.zip` and `noisy_testset_wav.zip` from the
+[Edinburgh DataShare](https://datashare.ed.ac.uk/handle/10283/2791), unzipped there.
 
 The trained model used by the live demo is included ([`models/esc50_cnn_noise.pt`](models/), 600 KB:
 weights, input normalization and class names), so the demo only needs a microphone. Stay quiet for the

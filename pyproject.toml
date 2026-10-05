@@ -20,12 +20,17 @@ dependencies = [
     "sounddevice",
     "scikit-learn",
     "torch",
+    "pystoi",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest",
     "ipykernel",
+]
+# PESQ needs a C compiler to install (no Windows wheels): pip install -e ".[pesq]" on Linux or Colab
+pesq = [
+    "pesq",
 ]
 
 [tool.pytest.ini_options]
