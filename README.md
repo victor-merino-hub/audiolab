@@ -115,15 +115,19 @@ noise reduction uses 32 ms frames. The classical single-microphone pipeline is i
 frame, exactly as it would run live ([`enhancement`](src/audiolab/enhancement.py)): STFT analysis and
 weighted overlap-add synthesis, a noise estimate tracked while the person talks, and a gain per
 frequency bin. Its latency is the frame length, so that is the axis of the experiment. Evaluated on the
-824 sentences of the VoiceBank+DEMAND test set, the standard benchmark (16 kHz):
+824 sentences of the VoiceBank+DEMAND test set, the standard benchmark (16 kHz), with three metrics:
+SI-SDR (how close the waveform is to the clean speech), STOI (predicted intelligibility) and PESQ
+(predicted quality, as listeners would rate it):
 
-![SI-SDR and STOI vs. frame length](docs/figures/denoising_latency.png)
+![SI-SDR, STOI and PESQ vs. frame length](docs/figures/denoising_latency.png)
 
 - **The price of latency.** The Wiener gain with a decision-directed SNR estimate takes SI-SDR from
   8.4 dB to 14.7 dB with 32 ms frames, but to 12.0 dB with 8 ms and 10.0 dB with 4 ms. An **oracle** gain,
   computed from the true speech and noise, separates the two causes: it also falls (18.9 → 15.3 dB),
   because short frames cannot resolve the harmonics of the voice, and the gap from the oracle to the
-  real method, which is the cost of estimating, grows from 4.2 to 5.3 dB.
+  real method, which is the cost of estimating, grows from 4.2 to 5.3 dB. Quality is more forgiving:
+  PESQ goes from 1.97 for the input (the published value for this test set) to 2.45 at 32 ms and 2.41
+  at 8 ms, which keeps 92% of the gain; 4 ms keeps only half (2.20).
 - **The noise estimator matters as much as the gain rule.** The classic minimum-tracking estimator
   (MCRA) takes in the start of every word before its speech detector reacts, and overestimates the noise
   by 1-3 dB, so the gain cuts speech; at 4 ms its output is worse than the noisy input. Replacing it with
@@ -132,8 +136,7 @@ frequency bin. Its latency is the frame length, so that is the axis of the exper
   the one that removes the most noise lowers it most, especially at low SNR, where help is needed most.
   The oracle reaches 0.946-0.958, so a gain per bin *can* help intelligibility; the classical estimate of
   it cannot. For a device whose purpose is understanding speech, this is the case for a learned
-  estimator, and why hearing aids limit the attenuation: a −6 to −10 dB floor keeps STOI near the input
-  and still gains 2.6-3.3 dB of SI-SDR at 8 ms.
+  estimator.
 - **Part of that loss is at the start of every word.** Applying the gains to the clean speech alone
   shows what they remove: the decision-directed rule leans on the previous, noise-only frame, so at a
   word onset its gain rises late and removes 4.9 dB of the first 10 ms (the oracle: 0.9 dB), right on
@@ -144,10 +147,19 @@ frequency bin. Its latency is the frame length, so that is the axis of the exper
 
 ![Speech kept by each gain around word onsets](docs/figures/denoising_onsets.png)
 
+- **Quality and intelligibility pull in opposite directions.** The decision-directed rule, which
+  suppresses the "musical noise" of simpler rules, has the best PESQ and the worst STOI. The gain floor,
+  the maximum attenuation, sets the balance: at 8 ms, a −10 dB floor keeps the quality of −15 dB (PESQ
+  2.40 vs. 2.41) with clearly more intelligibility (STOI 0.911 vs. 0.902), while −25 dB is worse in all
+  three metrics. That is the best compromise among the configurations tested, and why hearing aids
+  limit the attenuation instead of removing all the noise.
+
+![Quality vs. intelligibility of every configuration at 8 ms](docs/figures/denoising_quality_intelligibility.png)
+
 ![Spectrograms of one sentence: clean, noisy, and four gains](docs/figures/denoising_spectrograms.png)
 
-PESQ (perceived quality) runs in Colab ([`denoising_pesq.ipynb`](notebooks/denoising_pesq.ipynb)),
-since the package needs a C compiler. Notebook: [noise reduction](notebooks/07_noise_reduction.ipynb)
+PESQ is computed in Colab ([`denoising_pesq.ipynb`](notebooks/denoising_pesq.ipynb)), since the
+package needs a C compiler. Notebook: [noise reduction](notebooks/07_noise_reduction.ipynb)
 
 ### Data leakage: how a random split lies
 
@@ -211,8 +223,8 @@ matches the requested one, and time-stretching keeps the pitch.
 - [x] **Noise augmentation**: train with background noise so the shortcut disappears
 - [x] **Real-time demo**: classify live microphone input, and measure it on sounds recorded at home
 - [x] **Noise reduction**: spectral subtraction and Wiener filtering frame by frame, with the quality
-      vs. latency trade-off measured on VoiceBank+DEMAND (SI-SDR, STOI)
-- [ ] **Noise reduction, next**: PESQ, the live hearing-aid demo with its measured latency, then a small
+      vs. latency trade-off measured on VoiceBank+DEMAND (SI-SDR, STOI, PESQ)
+- [ ] **Noise reduction, next**: the live hearing-aid demo with its measured latency, then a small
       network that estimates the gain
 - [ ] **Hearable constraints**: latency budget, model size, quantization / ONNX export
 
