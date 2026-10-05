@@ -96,6 +96,8 @@ def main():
     metrics = [m for m in args.metrics.split(",") if m != "pesq" or pesq is not None]
 
     files = sorted((Path(args.data) / "clean_testset_wav").glob("*.wav"))[::args.every]
+    if not files:
+        raise SystemExit(f"no sentences found in {Path(args.data) / 'clean_testset_wav'}: is the test set unzipped there?")
     print(f"{len(files)} sentences x {len(configurations())} configurations, metrics: {', '.join(metrics)}"
           + ("" if pesq else " (PESQ not installed)"), flush=True)
     rows = []
