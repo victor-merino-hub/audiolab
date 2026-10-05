@@ -194,6 +194,10 @@ class NoiseReducer:
       "wiener"       Wiener gain xi / (1 + xi) with the SNR of the current frame only, xi = gamma - 1
       "wiener_dd"    Wiener gain with the decision-directed SNR estimate (Ephraim and Malah, 1984):
                      xi mixes the SNR of the previous frame's output with the current one
+      "wiener_tsnr"  two-step noise reduction (Plapous, Marro and Scalart, 2006): the decision-directed
+                     gain is refined with the current frame, xi2 = G_dd^2 gamma. The decision-directed
+                     estimate follows a rise of the SNR one frame late (it leans on the previous frame),
+                     which attenuates the onset of every word; the second step removes that delay
     gamma = |Y|^2 / noise is the a posteriori SNR, xi the a priori SNR (clean speech / noise).
     The gain never goes below gain_floor_db: residual noise sounds natural instead of musical,
     and a hearing aid user still hears the environment.
@@ -205,6 +209,7 @@ class NoiseReducer:
         self.g_min = 10 ** (gain_floor_db / 20)
         self.alpha_dd = per_hop(alpha_dd, hop_s)
         self.prev_clean = None                        # |G Y|^2 of the previous frame
+        self.gain = None                              # the gain of the last frame, to inspect or reuse
 
     def __call__(self, X):
         power = np.abs(X) ** 2
@@ -216,18 +221,22 @@ class NoiseReducer:
             G = np.sqrt(xi_ml / np.maximum(gamma, 1e-12))
         elif self.rule == "wiener":
             G = xi_ml / (1 + xi_ml)
-        elif self.rule == "wiener_dd":
+        elif self.rule in ("wiener_dd", "wiener_tsnr"):
             if self.prev_clean is None:
                 xi = xi_ml
             else:
                 xi = (self.alpha_dd * self.prev_clean / np.maximum(noise, 1e-12)
                       + (1 - self.alpha_dd) * xi_ml)
-            G = xi / (1 + xi)
+            G = np.maximum(xi / (1 + xi), self.g_min)
+            self.prev_clean = (G ** 2) * power        # step 1 keeps its own recursion in both rules
+            if self.rule == "wiener_tsnr":
+                xi = G ** 2 * gamma
+                G = xi / (1 + xi)
         else:
             raise ValueError(f"unknown rule {self.rule!r}")
 
         G = np.maximum(G, self.g_min)
-        self.prev_clean = (G ** 2) * power
+        self.gain = G
         return G * X
 
 

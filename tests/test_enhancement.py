@@ -132,7 +132,7 @@ def test_reducer_attenuates_noise_to_the_gain_floor():
     assert -17 < attenuation < -12
 
 
-@pytest.mark.parametrize("rule", ["subtraction", "wiener", "wiener_dd"])
+@pytest.mark.parametrize("rule", ["subtraction", "wiener", "wiener_dd", "wiener_tsnr"])
 def test_reducer_keeps_strong_syllables(rule):
     sr, n_fft, hop = 16000, 256, 128
     tone, gate = _bursts(sr, 3)

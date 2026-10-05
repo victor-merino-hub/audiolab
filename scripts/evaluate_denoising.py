@@ -42,7 +42,7 @@ def configurations():
     """(frame_ms, overlap, rule, noise estimator, gain floor in dB) of every method to evaluate."""
     configs = [(32, 2, "noisy", "-", 0.0)]                          # no processing: the reference
     for ms in FRAMES_MS:
-        for rule in ("subtraction", "wiener", "wiener_dd"):
+        for rule in ("subtraction", "wiener", "wiener_dd", "wiener_tsnr"):
             configs.append((ms, 2, rule, "spp", -15.0))
         configs.append((ms, 2, "wiener_dd", "mcra", -15.0))
         configs.append((ms, 2, "oracle", "-", -15.0))

@@ -134,6 +134,15 @@ frequency bin. Its latency is the frame length, so that is the axis of the exper
   it cannot. For a device whose purpose is understanding speech, this is the case for a learned
   estimator, and why hearing aids limit the attenuation: a −6 to −10 dB floor keeps STOI near the input
   and still gains 2.6-3.3 dB of SI-SDR at 8 ms.
+- **Part of that loss is at the start of every word.** Applying the gains to the clean speech alone
+  shows what they remove: the decision-directed rule leans on the previous, noise-only frame, so at a
+  word onset its gain rises late and removes 4.9 dB of the first 10 ms (the oracle: 0.9 dB), right on
+  the short consonants. Its two-step refinement (Plapous et al., 2006) halves that and raises STOI by
+  +0.006 at every frame length, in 92-96% of the sentences. That is a third of the loss at 8 ms. The
+  rest is not timing (plain Wiener treats onsets almost like the oracle and still loses STOI); most
+  likely it is the SNR misestimated where the speech is below the noise.
+
+![Speech kept by each gain around word onsets](docs/figures/denoising_onsets.png)
 
 ![Spectrograms of one sentence: clean, noisy, and four gains](docs/figures/denoising_spectrograms.png)
 
@@ -169,7 +178,7 @@ trained on.
 | `esc50` | ESC-50 metadata and clip loading |
 | `evaluation` | Cross-validation on predefined folds, random folds for comparison |
 | `realtime` | Ring buffer, level gate and live classification of microphone audio, with offline replay of recorded sessions |
-| `enhancement` | Streaming STFT/WOLA, noise estimation (MCRA, speech presence probability), spectral subtraction and Wiener gains, oracle gain, SI-SDR |
+| `enhancement` | Streaming STFT/WOLA, noise estimation (MCRA, speech presence probability), spectral subtraction, Wiener, decision-directed and two-step gains, oracle gain, SI-SDR |
 
 Scripts live in [`scripts/`](scripts/): `train_cnn_esc50.py` trains a CNN configuration with 5-fold
 cross-validation and saves its predictions for the analysis notebook; `realtime_demo.py` runs the live
