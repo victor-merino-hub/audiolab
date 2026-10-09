@@ -161,6 +161,33 @@ SI-SDR (how close the waveform is to the clean speech), STOI (predicted intellig
 PESQ is computed in Colab ([`denoising_pesq.ipynb`](notebooks/denoising_pesq.ipynb)), since the
 package needs a C compiler. Notebook: [noise reduction](notebooks/07_noise_reduction.ipynb)
 
+### A live hearing aid on a laptop, and why it cannot be one
+
+[`scripts/hearing_aid_demo.py`](scripts/hearing_aid_demo.py) runs the same noise reduction live:
+microphone → 8 ms frames → wired earphones. To measure the delay of the audio chain itself, it plays
+a chirp through the earphone and records it with the microphone, like a radar: a matched filter
+finds the echo, averaged over 11 periods so that it stands out from the room noise. Round trip of the
+sound card, drivers and operating system:
+
+| Windows audio API | Round trip | + algorithm (8 ms frames) |
+|---|---|---|
+| MME (the default) | 78.7 ms | 86.7 ms |
+| WASAPI, exclusive mode | 81.5 ms | 89.5 ms |
+| WDM-KS | 47.0 ms | 55.0 ms |
+
+The algorithm fits a hearing-aid budget; the laptop adds 6 to 10 times as much. With open earbuds the
+direct sound arrives first and the processed one 55 ms later, which sounds like an echo and hides the
+noise reduction: the noise that leaks in directly cannot be removed. That is the platform, not the
+code. A recorded session (the microphone input, the output and a log of every block) replayed offline
+through the same chain gives the same output to 16-bit precision, with no lost blocks (0 of 8,353;
+0.27 ms of computation per 4 ms block), and it removes 9 dB of room noise in the pauses and ~3 dB on
+the speech peaks:
+
+![Spectrograms of a live session: microphone and output, noise reduction on and off](docs/figures/live_hearing_aid.png)
+
+A short tonal sound at 3.5 s passes untouched: for the estimator, noise is what stays steady. Telling
+what a sound is belongs to the classifier above, which is why a hearing aid uses both.
+
 ### Data leakage: how a random split lies
 
 40% of the ESC-50 clips were cut from the same original recording as another clip, and share its
@@ -224,8 +251,11 @@ matches the requested one, and time-stretching keeps the pitch.
 - [x] **Real-time demo**: classify live microphone input, and measure it on sounds recorded at home
 - [x] **Noise reduction**: spectral subtraction and Wiener filtering frame by frame, with the quality
       vs. latency trade-off measured on VoiceBank+DEMAND (SI-SDR, STOI, PESQ)
-- [ ] **Noise reduction, next**: the live hearing-aid demo with its measured latency, then a small
-      network that estimates the gain
+- [x] **Live hearing-aid demo**: latency of the audio chain measured, real-time output verified against
+      offline processing
+- [ ] **Noise reduction, next**: estimate the gain with a long frame and apply it with a short filter
+      (the low-delay trick of hearing aids), a small network that estimates the gain, and a low-latency
+      audio platform for the live demo
 - [ ] **Hearable constraints**: latency budget, model size, quantization / ONNX export
 
 ## Project structure

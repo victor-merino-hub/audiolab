@@ -160,3 +160,12 @@ def test_oracle_removes_noise_where_it_dominates():
     oracle = OracleWiener(clean, noise, n_fft, hop, gain_floor_db=-40)
     y = process_signal(clean + noise, Wola(n_fft, hop), oracle)
     assert si_sdr(clean, y) > si_sdr(clean, clean + noise) + 15
+
+
+def test_frame_sizes_at_other_rates_keep_the_hop_dividing_the_frame():
+    for sr in (16000, 22050, 44100, 48000):
+        for ms in (4, 8, 16, 32):
+            for overlap in (2, 4):
+                n_fft, hop = frame_sizes(ms, sr, overlap)
+                assert n_fft == hop * overlap
+                assert abs(1000 * n_fft / sr - ms) < 1000 * overlap / sr   # within one hop of rounding

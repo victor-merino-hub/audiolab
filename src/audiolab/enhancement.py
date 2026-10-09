@@ -73,9 +73,12 @@ def process_signal(x, wola, fn=None):
 
 
 def frame_sizes(frame_ms, sr, overlap=2):
-    """(n_fft, hop) for a frame of frame_ms milliseconds; overlap 2 = 50%, 4 = 75%."""
-    n_fft = int(round(frame_ms * sr / 1000))
-    return n_fft, n_fft // overlap
+    """(n_fft, hop) for a frame of frame_ms milliseconds; overlap 2 = 50%, 4 = 75%.
+
+    n_fft is rounded to a multiple of the overlap so that the hop divides it (8 ms at 44.1 kHz: 352).
+    """
+    hop = int(round(frame_ms * sr / 1000 / overlap))
+    return hop * overlap, hop
 
 
 REF_HOP_S = 0.016       # the published smoothing constants below are for 16 ms hops
