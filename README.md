@@ -5,6 +5,11 @@
 Audio signal processing and machine learning for **hearables**: from DSP fundamentals to
 sound classification and noise reduction under real-time constraints.
 
+![Noise reduction on my own microphone: the STFT paints the spectrogram, then the output with the noise reduction switched off and on](docs/figures/demo_noise_reduction.gif)
+
+*My microphone, my room, my code: the noise reduction switched off and on, in 8 ms frames.
+[Full 54 s demo with sound](docs/media/audiolab_demo.mp4), including the live sound classifier.*
+
 > Work in progress. I am a Telecommunications Engineering student building this project
 > step by step to learn audio DSP and ML in depth. See the [roadmap](#roadmap).
 
@@ -266,6 +271,7 @@ notebooks/      experiments and explanations
 scripts/        training, live demo and evaluation scripts
 models/         the trained model used by the live demo
 docs/figures/   figures used in this README
+docs/media/     the demo video
 tests/          pytest test suite
 data/           audio files (not committed)
 ```
