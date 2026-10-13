@@ -8,7 +8,7 @@ within the latency and compute budget of a small device.
 
 ![Noise reduction on my own microphone: the STFT paints the spectrogram, then the output with the noise reduction switched off and on](docs/figures/demo_noise_reduction.gif)
 
-*My microphone, my room, my code: the noise reduction switched off and on, in 8 ms frames.
+*My microphone, my room, live: the noise reduction switched off and on, in 8 ms frames.
 [Full 54 s demo with sound](docs/media/audiolab_demo.mp4), including the live sound classifier.*
 
 ## In short
