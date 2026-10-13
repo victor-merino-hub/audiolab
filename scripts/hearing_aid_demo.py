@@ -10,10 +10,10 @@ USE WIRED HEADPHONES. With the laptop speakers the output reaches the microphone
     python scripts/hearing_aid_demo.py --measure             # measure the latency of the audio chain
     python scripts/hearing_aid_demo.py --file in.wav         # process a file offline through the same chain
 
---measure plays clicks through the output and records them with the microphone (hold the headphones
-against the microphone, or use the speakers at low volume for this test only). The delay between a
-click being sent and coming back is the output + input latency of the sound card, the drivers and the
-operating system; adding the frame length gives the total delay from the microphone to the ear.
+--measure plays short chirps through the output and records them with the microphone (hold the
+headphones against the microphone, or use the speakers at low volume for this test only). The delay
+between a chirp being sent and coming back is the output + input latency of the sound card, the drivers
+and the operating system; adding the frame length gives the total delay from the microphone to the ear.
 
 --hostapi: Windows has several audio APIs and they buffer very differently. MME (the default) is the
 oldest and buffers the most; WASAPI and WDM-KS go closer to the driver. wasapi-exclusive and wdm-ks

@@ -2,115 +2,41 @@
 
 [![tests](https://github.com/victor-merino-hub/audiolab/actions/workflows/tests.yml/badge.svg)](https://github.com/victor-merino-hub/audiolab/actions/workflows/tests.yml)
 
-Audio signal processing and machine learning for **hearables**: from DSP fundamentals to
-sound classification and noise reduction under real-time constraints.
+Audio signal processing and machine learning for **hearing aids and hearables**, built around the two
+jobs of a hearing aid: **cleaning the speech** and **understanding the sound environment**, live and
+within the latency and compute budget of a small device.
 
 ![Noise reduction on my own microphone: the STFT paints the spectrogram, then the output with the noise reduction switched off and on](docs/figures/demo_noise_reduction.gif)
 
 *My microphone, my room, my code: the noise reduction switched off and on, in 8 ms frames.
 [Full 54 s demo with sound](docs/media/audiolab_demo.mp4), including the live sound classifier.*
 
-> Work in progress. I am a Telecommunications Engineering student building this project
-> step by step to learn audio DSP and ML in depth. See the [roadmap](#roadmap).
+## In short
 
-## Results so far
+- **Noise reduction within a hearing-aid latency budget.** The classical single-microphone pipeline
+  (streaming STFT, noise tracking, Wiener and decision-directed gains), evaluated on the 824
+  VoiceBank+DEMAND test sentences: 8 ms frames keep 92% of the quality gain of the textbook 32 ms
+  (PESQ 1.97 → 2.41 vs. 2.45). It cleans the speech without making it more intelligible (STOI), and
+  part of that loss is traced to the start of every word.
+- **Running live, with the latency measured.** The same code runs microphone → earphones on a
+  laptop. Measured like a radar (chirp + matched filter), the sound card and operating system add
+  47-82 ms to the 8 ms of the algorithm, and a recorded session matches offline processing with
+  0 lost blocks.
+- **Environmental sound classification.** A 149k-weight CNN on log-mel spectrograms reaches 76.5%
+  on ESC-50 (5 official folds, chance 2%), trained on a laptop CPU, and classifies the microphone live.
+- **Checking what the benchmark hides.** A random split inflates accuracy by 10.6 points; the CNN
+  learned to read the digital silence ESC-50 pads clips with (noise training removes it); and the
+  laptop's own microphone processing cost 8 points at home.
+- **Engineering.** Installable Python package, 84 tests (many check physical properties, not just that
+  the code runs), CI, and every benchmark result reproducible from the notebooks and scripts.
 
-### Environmental sound classification (ESC-50)
+**Contents:** [Noise reduction](#noise-reduction-under-a-hearing-aid-latency-budget) ·
+[Live hearing aid](#a-live-hearing-aid-on-a-laptop-and-why-it-cannot-be-one) ·
+[Sound classification](#environmental-sound-classification-esc-50) ·
+[Real-time classifier](#real-time-classifier-what-changes-with-a-real-microphone) ·
+[What's inside](#whats-inside) · [Roadmap](#roadmap) · [Getting started](#getting-started)
 
-[ESC-50](https://github.com/karolpiczak/ESC-50): 2,000 real clips of 5 s in 50 classes, evaluated
-with the 5 official cross-validation folds. Chance level is 2%.
-
-| Model | Weights | Accuracy | Reference |
-|---|---|---|---|
-| MFCC statistics + Random Forest | - | 47.6% ± 2.1% | 44.3% in the ESC-50 paper |
-| **CNN on log-mel spectrograms** | 149k | **76.5% ± 2.7%** | 64.5% in Piczak (2015) |
-| CNN trained with background noise | 149k | 75.0% ± 4.0% clean, **71.5%** with noise at 20 dB SNR | see [below](#the-digital-silence-shortcut-and-how-noise-training-removes-it) |
-| Human listeners | | | 81.3% |
-
-![Accuracy of each model on the 5 official folds](docs/figures/esc50_models.png)
-
-The CNN (4 conv blocks, trained on a laptop CPU in 47 minutes) wins most where the baseline
-was blind: averaging MFCCs over time destroys temporal patterns, so **clock tick goes from 5% to 80%**
-and car horn from 10% to 82%. Two design experiments, with everything else fixed:
-
-- **Keep the frequency position** (average only over time at the end): +13.6 points. Time shifts
-  should not change the class, but frequency position does: a steady tone is a car horn or an
-  alarm depending on where it sits. Without it the network cannot even fit its training set.
-- **Data augmentation** (time shift + SpecAugment): no measurable gain here (76.5% vs 76.2%). The
-  time shift is redundant with a network that already averages over time. For scale: retraining
-  the same model on a GPU instead of the CPU changes 9% of the predictions and the mean by 0.5
-  points, so differences below ~1 point are noise.
-
-**Sanity checks** before trusting a result this far above the reference: training on shuffled
-labels gives 2.2% (chance: 2%), so nothing leaks from the test folds; and the class-dependent
-band-limiting the dataset authors warn about is a weak cue (3.9% on its own). The gap with the 2015
-CNN is mostly a smaller model (149k vs ~26M weights), whole clips instead of 1 s segments, and batch
-normalization.
-
-Notebooks: [exploration](notebooks/02_esc50_exploration.ipynb) · [baseline and leakage](notebooks/03_esc50_baseline.ipynb) · [CNN](notebooks/04_esc50_cnn.ipynb) · [robustness](notebooks/05_esc50_robustness.ipynb) · [real time](notebooks/06_realtime.ipynb)
-
-### The digital silence shortcut, and how noise training removes it
-
-ESC-50 pads short clips to 5 s with exact zeros, more for some classes (glass breaking, sneezing)
-than others, and the network learns to use it. A real microphone never outputs exact zeros: adding
-pink background noise only 60 dB below the sound leaves the clips without padding untouched
-(77.3% → 77.3%) but costs the padded ones 9 points, and 42 points at 20 dB.
-
-Training the same network with background noise (white, pink and brown, at random SNRs between
-10 and 60 dB, on 3 of every 4 training examples) removes the shortcut: padded and unpadded clips
-now behave the same at every noise level, and glass breaking stays at 95% instead of falling to 38%.
-It costs 2 points on the clean benchmark and gains 10 with noise at 20 dB (71.5% vs. 61.3%), which
-is the trade a device listening through a real microphone wants.
-
-![Accuracy with background noise, before and after noise training](docs/figures/silence_shortcut.png)
-
-**Noise augmentation without touching the audio: adding powers.** Instead of adding noise to the
-waveform and recomputing the log-mel spectrogram of every training example, the noise is mixed
-directly into the spectrogram. For uncorrelated signals
-
-$$|X + N|^2 = |X|^2 + |N|^2 + 2\,\mathrm{Re}(X N^*)$$
-
-and the cross term averages to zero (even more after summing the bins of each mel band), so powers
-simply add: `10·log10(10^(S/10) + g·10^(N/10))`, with the gain `g` set by the target SNR. Checked
-against mixing the waveforms, the median error is below 0.5 dB with no bias, and the augmentation
-costs almost nothing during training. The test noise (pink, added to the waveform) is not exactly
-the training noise, but both are synthetic: the real test is a live microphone.
-
-### Real-time demo: what changes with a real microphone
-
-[`scripts/realtime_demo.py`](scripts/realtime_demo.py) classifies the laptop microphone live: every
-0.5 s, the latest 2 s go through the training pipeline and the noise-trained CNN, and the top 3
-classes are shown. Computation takes ~10 ms per prediction (2% of the hop), so the latency is set by
-the design, not by the CPU: a sound appears at most one hop after it starts and leaves the screen 2 s
-after it ends. Two things the benchmark never needed: a **level gate**, because the CNN must name one
-of its 50 classes even for an empty room (it called silence "snoring"), and a **confidence threshold**.
-
-![The live demo: keyboard typing, a sound it is not sure about, door knocks and breathing](docs/figures/realtime_demo.gif)
-
-To evaluate it, I recorded 40 s sessions at home repeating one sound (5 ESC-50 classes, plus speech
-and music) and replayed them offline through exactly the same code as the live demo.
-
-**The microphone's own processing was the main problem.** The laptop's default processing (Waves
-MaxxAudio) mutes the microphone between sounds: up to 64% of the samples are exact zeros. That
-digital silence brought back the shortcut from the previous section: the windows called "glass
-breaking" (the most padded ESC-50 class) were 59% zeros, against 24% for the rest. With the processing
-off, top-1 accuracy goes from 64% to **72%**, close to the 75% of cross-validation, and the false
-glass breaking from 17% to 2% of the windows.
-
-![Microphone processing on vs. off: levels while knocking on a door, and accuracy at home](docs/figures/realtime_home.png)
-
-- **Comfort noise does not fix it.** Filling the pauses with pink noise, like a phone does during the
-  silences of a call, changes nothing at -80 dBFS and hurts from -70 dBFS on (72% → 55% at -60 dBFS,
-  only 2-7 dB above the real room background). The classifier has to listen to the raw microphone
-  signal, which is how hearing aids are built: the environment classifier steers the noise reduction
-  instead of listening through it.
-- **Sounds outside the 50 classes are the open problem.** With a 0.4 confidence threshold, 85% of
-  what is shown is correct, but the confidence does not separate known sounds from speech and music
-  (AUROC ≈ 0.5): speech is taken for "drinking, sipping" and music for "sheep", as confidently as a
-  real knock. That needs a model that knows those sounds (see the [roadmap](#roadmap)).
-
-One person, room and microphone, and 5 classes: the direction of these effects is clear, differences
-of a few points are not. Notebook: [real-time evaluation](notebooks/06_realtime.ipynb)
+## Cleaning the sound
 
 ### Noise reduction under a hearing-aid latency budget
 
@@ -174,13 +100,14 @@ a chirp through the earphone and records it with the microphone, like a radar: a
 finds the echo, averaged over 11 periods so that it stands out from the room noise. Round trip of the
 sound card, drivers and operating system:
 
-| Windows audio API | Round trip | + algorithm (8 ms frames) |
+| Windows audio API | Round trip (measured) | + 8 ms frame (estimated total) |
 |---|---|---|
 | MME (the default) | 78.7 ms | 86.7 ms |
 | WASAPI, exclusive mode | 81.5 ms | 89.5 ms |
 | WDM-KS | 47.0 ms | 55.0 ms |
 
-The algorithm fits a hearing-aid budget; the laptop adds 6 to 10 times as much. With open earbuds the
+The last column adds the frame length to the measured round trip; it is an estimate, not an
+end-to-end measurement. The algorithm fits a hearing-aid budget; the laptop adds 6 to 10 times as much. With open earbuds the
 direct sound arrives first and the processed one 55 ms later, which sounds like an echo and hides the
 noise reduction: the noise that leaks in directly cannot be removed. That is the platform, not the
 code. A recorded session (the microphone input, the output and a log of every block) replayed offline
@@ -191,7 +118,44 @@ the speech peaks:
 ![Spectrograms of a live session: microphone and output, noise reduction on and off](docs/figures/live_hearing_aid.png)
 
 A short tonal sound at 3.5 s passes untouched: for the estimator, noise is what stays steady. Telling
-what a sound is belongs to the classifier above, which is why a hearing aid uses both.
+what a sound is belongs to the [sound classifier](#environmental-sound-classification-esc-50) below,
+which is why a hearing aid uses both.
+
+## Understanding the environment
+
+### Environmental sound classification (ESC-50)
+
+[ESC-50](https://github.com/karolpiczak/ESC-50): 2,000 real clips of 5 s in 50 classes, evaluated
+with the 5 official cross-validation folds. Chance level is 2%.
+
+| Model | Weights | Accuracy | Reference |
+|---|---|---|---|
+| MFCC statistics + Random Forest | - | 47.6% ± 2.1% | 44.3% in the ESC-50 paper |
+| **CNN on log-mel spectrograms** | 149k | **76.5% ± 2.7%** | 64.5% in Piczak (2015) |
+| CNN trained with background noise | 149k | 75.0% ± 4.0% clean, **71.5%** with noise at 20 dB SNR | see [below](#the-digital-silence-shortcut-and-how-noise-training-removes-it) |
+| Human listeners | | | 81.3% |
+
+![Accuracy of each model on the 5 official folds](docs/figures/esc50_models.png)
+
+The CNN (4 conv blocks, trained on a laptop CPU in 47 minutes) wins most where the baseline
+was blind: averaging MFCCs over time destroys temporal patterns, so **clock tick goes from 5% to 80%**
+and car horn from 10% to 82%. Two design experiments, with everything else fixed:
+
+- **Keep the frequency position** (average only over time at the end): +13.6 points. Time shifts
+  should not change the class, but frequency position does: a steady tone is a car horn or an
+  alarm depending on where it sits. Without it the network cannot even fit its training set.
+- **Data augmentation** (time shift + SpecAugment): no measurable gain here (76.5% vs 76.2%). The
+  time shift is redundant with a network that already averages over time. For scale: retraining
+  the same model on a GPU instead of the CPU changes 9% of the predictions and the mean by 0.5
+  points, so differences below ~1 point are noise.
+
+**Sanity checks** before trusting a result this far above the reference: training on shuffled
+labels gives 2.2% (chance: 2%), so nothing leaks from the test folds; and the class-dependent
+band-limiting the dataset authors warn about is a weak cue (3.9% on its own). The gap with the 2015
+CNN is mostly a smaller model (149k vs ~26M weights), whole clips instead of 1 s segments, and batch
+normalization.
+
+Notebooks: [exploration](notebooks/02_esc50_exploration.ipynb) · [baseline and leakage](notebooks/03_esc50_baseline.ipynb) · [CNN](notebooks/04_esc50_cnn.ipynb) · [robustness](notebooks/05_esc50_robustness.ipynb) · [real time](notebooks/06_realtime.ipynb)
 
 ### Data leakage: how a random split lies
 
@@ -208,11 +172,74 @@ of accuracy, since it also removes the timbre of continuous sounds.
 For a hearable this matters: it has to work in every user's home, not on the recordings it was
 trained on.
 
+### The digital silence shortcut, and how noise training removes it
+
+ESC-50 pads short clips to 5 s with exact zeros, more for some classes (glass breaking, sneezing)
+than others, and the network learns to use it. A real microphone never outputs exact zeros: adding
+pink background noise only 60 dB below the sound leaves the clips without padding untouched
+(77.3% → 77.3%) but costs the padded ones 9 points, and 42 points at 20 dB.
+
+Training the same network with background noise (white, pink and brown, at random SNRs between
+10 and 60 dB, on 3 of every 4 training examples) removes the shortcut: padded and unpadded clips
+now behave the same at every noise level, and glass breaking stays at 95% instead of falling to 38%.
+It costs 2 points on the clean benchmark and gains 10 with noise at 20 dB (71.5% vs. 61.3%), which
+is the trade a device listening through a real microphone wants.
+
+![Accuracy with background noise, before and after noise training](docs/figures/silence_shortcut.png)
+
+**Noise augmentation without touching the audio: adding powers.** Instead of adding noise to the
+waveform and recomputing the log-mel spectrogram of every training example, the noise is mixed
+directly into the spectrogram. For uncorrelated signals
+
+$$|X + N|^2 = |X|^2 + |N|^2 + 2\,\mathrm{Re}(X N^*)$$
+
+and the cross term averages to zero (even more after summing the bins of each mel band), so powers
+simply add: `10·log10(10^(S/10) + g·10^(N/10))`, with the gain `g` set by the target SNR. Checked
+against mixing the waveforms, the median error is below 0.5 dB with no bias, and the augmentation
+costs almost nothing during training. The test noise (pink, added to the waveform) is not exactly
+the training noise, but both are synthetic: the real test is a live microphone.
+
+### Real-time classifier: what changes with a real microphone
+
+[`scripts/realtime_demo.py`](scripts/realtime_demo.py) classifies the laptop microphone live: every
+0.5 s, the latest 2 s go through the training pipeline and the noise-trained CNN, and the top 3
+classes are shown. Computation takes ~10 ms per prediction (2% of the hop), so the latency is set by
+the design, not by the CPU: a sound appears at most one hop after it starts and leaves the screen 2 s
+after it ends. Two things the benchmark never needed: a **level gate**, because the CNN must name one
+of its 50 classes even for an empty room (it called silence "snoring"), and a **confidence threshold**.
+
+![The live demo: keyboard typing, a sound it is not sure about, door knocks and breathing](docs/figures/realtime_demo.gif)
+
+To evaluate it, I recorded 40 s sessions at home repeating one sound (5 ESC-50 classes, plus speech
+and music) and replayed them offline through exactly the same code as the live demo.
+
+**The microphone's own processing was the main problem.** The laptop's default processing (Waves
+MaxxAudio) mutes the microphone between sounds: up to 64% of the samples are exact zeros. That
+digital silence brought back the shortcut from the previous section: the windows called "glass
+breaking" (the most padded ESC-50 class) were 59% zeros, against 24% for the rest. With the processing
+off, top-1 accuracy goes from 64% to **72%**, close to the 75% of cross-validation, and the false
+glass breaking from 17% to 2% of the windows.
+
+![Microphone processing on vs. off: levels while knocking on a door, and accuracy at home](docs/figures/realtime_home.png)
+
+- **Comfort noise does not fix it.** Filling the pauses with pink noise, like a phone does during the
+  silences of a call, changes nothing at -80 dBFS and hurts from -70 dBFS on (72% → 55% at -60 dBFS,
+  only 2-7 dB above the real room background). The classifier has to listen to the raw microphone
+  signal, which is how hearing aids are built: the environment classifier steers the noise reduction
+  instead of listening through it.
+- **Sounds outside the 50 classes are the open problem.** With a 0.4 confidence threshold, 85% of
+  what is shown is correct, but the confidence does not separate known sounds from speech and music
+  (AUROC ≈ 0.5): speech is taken for "drinking, sipping" and music for "sheep", as confidently as a
+  real knock. That needs a model that knows those sounds (see the [roadmap](#roadmap)).
+
+One person, room and microphone, and 5 classes: the direction of these effects is clear, differences
+of a few points are not. Notebook: [real-time evaluation](notebooks/06_realtime.ipynb)
+
 ## What's inside
 
 | Module | What it does |
 |---|---|
-| `generator` | Periodic signals (sine, square, triangle, sawtooth) with aliasing checks |
+| `generator` | Periodic signals (sine, square, triangle, sawtooth); the square, triangle and sawtooth are sampled directly, so harmonics above Nyquist alias |
 | `analysis` | FFT spectrum and spectrogram |
 | `processing` | Speed change vs. time-stretch (phase vocoder), pink background noise at a given SNR |
 | `audio_io` | Load, save and record audio |
@@ -261,7 +288,10 @@ matches the requested one, and time-stretching keeps the pitch.
 - [ ] **Noise reduction, next**: estimate the gain with a long frame and apply it with a short filter
       (the low-delay trick of hearing aids), a small network that estimates the gain, and a low-latency
       audio platform for the live demo
-- [ ] **Hearable constraints**: latency budget, model size, quantization / ONNX export
+- [ ] **Classifier and noise reduction together**: the environment classifier choosing the noise
+      reduction settings, as a hearing aid switches programs
+- [ ] **Hearable constraints**: model size, quantization / ONNX export, computation per block on an
+      embedded target
 
 ## Project structure
 
@@ -306,9 +336,20 @@ first 2 s, while it measures the background:
 python scripts/realtime_demo.py
 ```
 
+The live hearing aid needs **wired** earphones: with the laptop speakers the output reaches the
+microphone again and howls, and Bluetooth adds 100-200 ms. On Windows, `--hostapi wdm-ks` gave the
+lowest latency here.
+
+```bash
+python scripts/hearing_aid_demo.py             # Enter switches the noise reduction on/off
+python scripts/hearing_aid_demo.py --measure   # round-trip latency of the audio chain
+```
+
 Training a CNN takes ~47 minutes on a laptop CPU. To use a free GPU instead, open
 [`gpu_training.ipynb`](notebooks/gpu_training.ipynb) in Google Colab or Kaggle: it clones this
 repository, downloads ESC-50, trains, and packages the models for download.
+
+Using the package directly:
 
 ```python
 from audiolab.generator import generate_signal
@@ -317,6 +358,18 @@ from audiolab.analysis import compute_spectrum
 t, y = generate_signal("square", frequency=440, amplitude=0.5, fs=44100, duration=1.0)
 f, P = compute_spectrum(y, fs=44100)
 ```
+
+## About
+
+I am a Telecommunications Engineering student at the University of Valladolid (Spain). I built
+audiolab to learn audio DSP and machine learning for hearing devices, from the Fourier series of a
+square wave to noise reduction running live, measuring every step on real data.
+
+**How it was built.** Most of the code was written with an AI coding assistant (Claude Code), and
+the commits say so. My part was choosing the goal and the questions, deciding what to try next,
+recording and testing everything live on my own hardware, and working through every result until I
+could explain it. The assistant made me faster; it did not make the measurements less real, and the
+limits of each result are stated next to it.
 
 ## License
 

@@ -3,7 +3,8 @@
 The framework is weighted overlap-add (WOLA): every hop of R new samples, the latest N samples are
 windowed, transformed with an FFT, multiplied by a gain per frequency bin, transformed back, windowed
 again and overlap-added into the output. With the identity gain the output is exactly the input,
-delayed N - R samples (perfect reconstruction).
+delayed N - R samples (perfect reconstruction). In real time the R new samples also have to arrive
+before a frame can be processed, so the latency from input to output is R + (N - R) = N, the frame length.
 """
 import numpy as np
 
